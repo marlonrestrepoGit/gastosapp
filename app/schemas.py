@@ -35,3 +35,18 @@ class ExpenseOut(ExpenseCreate):
     id: int
 
     model_config = {"from_attributes": True}
+
+
+class CategoryTotal(BaseModel):
+    category: str
+    total_cop: float
+    total_usd: float
+
+
+class Summary(BaseModel):
+    month: str
+    cop_per_usd: float
+    rate_source: str  # "live" = tasa actual de la API, "fallback" = valor de respaldo
+    total_cop: float
+    total_usd: float
+    by_category: list[CategoryTotal]

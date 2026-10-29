@@ -1,11 +1,14 @@
-from fastapi import Depends, FastAPI, HTTPException, Response, status
+from datetime import date
+
+from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from . import models, schemas
 from .database import Base, engine, get_db
 from .security import create_access_token, get_current_user, hash_password, verify_password
+from .services import get_usd_rate
 
 Base.metadata.create_all(bind=engine)  # crea las tablas si no existen
 
@@ -105,3 +108,50 @@ def delete_expense(
     db.delete(expense)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---------- Resumen mensual ----------
+
+
+@app.get("/summary", response_model=schemas.Summary)
+def summary(
+    month: str | None = Query(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Total del mes por categoría, en pesos y en dólares. Formato de month: 2026-10."""
+    if month is None:
+        month = date.today().strftime("%Y-%m")
+    year, mon = int(month[:4]), int(month[5:])
+    start = date(year, mon, 1)
+    end = date(year + (mon == 12), mon % 12 + 1, 1)  # primer día del mes siguiente
+
+    rows = db.execute(
+        select(models.Expense.category, func.sum(models.Expense.amount_cop))
+        .where(
+            models.Expense.user_id == user.id,
+            models.Expense.date >= start,
+            models.Expense.date < end,
+        )
+        .group_by(models.Expense.category)
+        .order_by(models.Expense.category)
+    ).all()
+
+    rate, source = get_usd_rate()
+    by_category = [
+        schemas.CategoryTotal(
+            category=category,
+            total_cop=float(total),
+            total_usd=round(float(total) / rate, 2),
+        )
+        for category, total in rows
+    ]
+    total_cop = sum(item.total_cop for item in by_category)
+    return schemas.Summary(
+        month=month,
+        cop_per_usd=rate,
+        rate_source=source,
+        total_cop=total_cop,
+        total_usd=round(total_cop / rate, 2),
+        by_category=by_category,
+    )
