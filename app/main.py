@@ -9,11 +9,16 @@ from . import models, schemas
 from .database import Base, engine, get_db
 from .security import create_access_token, get_current_user, hash_password, verify_password
 from .services import get_usd_rate
+from fastapi.responses import RedirectResponse 
 
 Base.metadata.create_all(bind=engine)  # crea las tablas si no existen
 
 app = FastAPI(title="GastosApp", description="Control de gastos personales")
 
+
+@app.get("/", include_in_schema=False)
+def home():
+    return RedirectResponse(url="/docs")
 
 # ---------- Autenticación ----------
 
